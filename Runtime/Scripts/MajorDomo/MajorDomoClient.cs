@@ -4,6 +4,7 @@
 // (C) Westfälische Hochschule, Gelsenkirchen, Germany
 #endregion Copyright Information
 
+using NetMQ;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -57,9 +58,8 @@ namespace SentienceLab.MajorDomo
 
 		public MajorDomoClient()
 		{
-			/// register with NetMQ manager to properly initialise NetMQ
-			NetMQ.Manager.Register(this);
-			
+			AsyncIO.ForceDotNet.Force();
+
 			m_serverInformation = new ServerInformation();
 
 			ClientManager = new ClientManager();
@@ -99,8 +99,8 @@ namespace SentienceLab.MajorDomo
 
 		~MajorDomoClient()
 		{
-			// one client less. are we done and have to clean up the NetMQ context?
-			NetMQ.Manager.Unregister(this);
+			Cleanup();
+			NetMQConfig.Cleanup();
 		}
 
 
@@ -857,9 +857,9 @@ namespace SentienceLab.MajorDomo
 						m_diagnostics.NumberOfRequestsSent++;
 
 						m_msgClientRequestReply.InitEmpty();
-						if (m_clientRequestSocket.TryReceive(ref m_msgClientRequestReply, TimeSpan.FromSeconds(m_timeoutInterval)) && (m_msgClientRequestReply.Data != null))
+						if (m_clientRequestSocket.TryReceive(ref m_msgClientRequestReply, TimeSpan.FromSeconds(m_timeoutInterval)) && (m_msgClientRequestReply.UnsafeData != null))
 						{
-							m_bufClientRequestReply = new FlatBuffers.ByteBuffer(m_msgClientRequestReply.Data);
+							m_bufClientRequestReply = new FlatBuffers.ByteBuffer(m_msgClientRequestReply.UnsafeData);
 							m_serverReply = AUT_WH.MajorDomoProtocol.ServerReply.GetRootAsServerReply(m_bufClientRequestReply, m_serverReply);
 							if (m_serverReply.RepType == AUT_WH.MajorDomoProtocol.UServerReply.SvRep_Error)
 							{
@@ -899,11 +899,11 @@ namespace SentienceLab.MajorDomo
 			m_msgServerEvent.InitEmpty();
 			try
 			{
-				if (e.Socket.TryReceive(ref m_msgServerEvent, TimeSpan.Zero) && (m_msgServerEvent.Data != null))
+				if (e.Socket.TryReceive(ref m_msgServerEvent, TimeSpan.Zero) && (m_msgServerEvent.UnsafeData != null))
 				{
 					m_diagnostics.NumberOfEventsReceived++;
 
-					var bufServerEvent = new FlatBuffers.ByteBuffer(m_msgServerEvent.Data);
+					var bufServerEvent = new FlatBuffers.ByteBuffer(m_msgServerEvent.UnsafeData);
 					m_serverEvent = AUT_WH.MajorDomoProtocol.ServerEvent.GetRootAsServerEvent(bufServerEvent, m_serverEvent);
 
 					if (!IsConnected()) return; // in case this packet comes too late
@@ -1164,9 +1164,9 @@ namespace SentienceLab.MajorDomo
 		private void ServerUpdate_ReceiveReady(object sender, NetMQ.NetMQSocketEventArgs e)
 		{
 			m_msgServerUpdate.InitEmpty();
-			if (e.Socket.TryReceive(ref m_msgServerUpdate, TimeSpan.Zero) && (m_msgServerUpdate.Data != null))
+			if (e.Socket.TryReceive(ref m_msgServerUpdate, TimeSpan.Zero) && (m_msgServerUpdate.UnsafeData != null))
 			{
-				var bufServerUpdate = new FlatBuffers.ByteBuffer(m_msgServerUpdate.Data);
+				var bufServerUpdate = new FlatBuffers.ByteBuffer(m_msgServerUpdate.UnsafeData);
 				m_entityUpdates = AUT_WH.MajorDomoProtocol.EntityUpdates.GetRootAsEntityUpdates(bufServerUpdate, m_entityUpdates);
 
 				if (!IsConnected()) return; // in case this packet comes too late

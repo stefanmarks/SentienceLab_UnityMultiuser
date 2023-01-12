@@ -1,11 +1,11 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using JetBrains.Annotations;
 using NetMQ.Sockets;
-using System.Runtime.InteropServices;
 
 namespace NetMQ
 {
@@ -18,7 +18,7 @@ namespace NetMQ
         /// Create a new NetMQBeaconEventArgs object containing the given NetMQBeacon.
         /// </summary>
         /// <param name="beacon">the NetMQBeacon object to hold a reference to</param>
-        public NetMQBeaconEventArgs([NotNull] NetMQBeacon beacon)
+        public NetMQBeaconEventArgs(NetMQBeacon beacon)
         {
             Beacon = beacon;
         }
@@ -26,13 +26,24 @@ namespace NetMQ
         /// <summary>
         /// Get the NetMQBeacon object that this holds.
         /// </summary>
-        [NotNull]
         public NetMQBeacon Beacon { get; }
     }
 
+    /// <summary>
+    /// NetMQBeacon implements a peer-to-peer discovery service for local networks.
+    /// </summary>
+    /// <remarks>
+    /// A beacon can broadcast and/or capture service announcements using UDP messages on the local area network.
+    /// You can define the format of your outgoing beacons, and set a filter that validates incoming beacons.
+    /// Beacons are sent and received asynchronously in the background.
+    /// 
+    /// We can use the NetMQBeacon to discover and connect to other NetMQ/CZMQ services in the network automatically
+    /// without central configuration. Please note that to use NetMQBeacon your infrastructure must support broadcast.
+    /// Most cloud providers don't support broadcast.
+    /// </remarks>
     public sealed class NetMQBeacon : IDisposable, ISocketPollable
     {
-        public const int UdpFrameMax = 255;
+        private const int UdpFrameMax = 255;
 
         private const string ConfigureCommand = "CONFIGURE";
         private const string PublishCommand = "PUBLISH";
@@ -44,19 +55,22 @@ namespace NetMQ
 
         private sealed class Shim : IShimHandler
         {
-            private NetMQSocket m_pipe;
-            private Socket m_udpSocket;
+            private NetMQSocket? m_pipe;
+            private Socket? m_udpSocket;
             private int m_udpPort;
 
-            private EndPoint m_broadcastAddress;
+            private EndPoint? m_broadcastAddress;
 
-            private NetMQFrame m_transmit;
-            private NetMQFrame m_filter;
-            private NetMQTimer m_pingTimer;
-            private NetMQPoller m_poller;
+            private NetMQFrame? m_transmit;
+            private NetMQFrame? m_filter;
+            private NetMQTimer? m_pingTimer;
+            private NetMQPoller? m_poller;
 
-            private void Configure([NotNull] string interfaceName, int port)
+            private void Configure(string interfaceName, int port)
             {
+                Assumes.NotNull(m_poller);
+                Assumes.NotNull(m_pipe);
+
                 // In case the beacon was configured twice
                 if (m_udpSocket != null)
                 {
@@ -81,8 +95,8 @@ namespace NetMQ
                 // messages will replicate to each owner
                 m_udpSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
 
-                IPAddress bindTo = null;
-                IPAddress sendTo = null;
+                IPAddress? bindTo = null;
+                IPAddress? sendTo = null;
 
                 if (interfaceName == "*")
                 {
@@ -107,11 +121,11 @@ namespace NetMQ
                         if (interfaceAddress == null || @interface.Address.Equals(interfaceAddress))
                         {
 							// because windows and unix differ in how they handle broadcast addressing this needs to be platform specific
-							// on windows any interface can recieve broadcast by requesting to enable broadcast on the socket
-							// on linux to recieve broadcast you must bind to the broadcast address specifically
+							// on windows any interface can receive broadcast by requesting to enable broadcast on the socket
+							// on linux to receive broadcast you must bind to the broadcast address specifically
 							//bindTo = @interface.Address;
 							sendTo = @interface.BroadcastAddress;
-#if NET35 || NET40 || NET47
+#if NET45 || NET47
 							if (Environment.OSVersion.Platform==PlatformID.Unix)
 #else
 							if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -139,7 +153,7 @@ namespace NetMQ
                 m_pipe.SendFrame(bindTo?.ToString() ?? "");
             }
 
-            private static bool Compare([NotNull] NetMQFrame a, [NotNull] NetMQFrame b, int size)
+            private static bool Compare(NetMQFrame a, NetMQFrame b, int size)
             {
                 for (int i = 0; i < size; i++)
                 {
@@ -177,12 +191,17 @@ namespace NetMQ
 
             private void PingElapsed(object sender, NetMQTimerEventArgs e)
             {
+                Assumes.NotNull(m_transmit);
+
                 SendUdpFrame(m_transmit);
             }
 
             private void OnUdpReady(Socket socket)
             {
-                var frame = ReceiveUdpFrame(out string peerName);
+                Assumes.NotNull(m_pipe);
+
+                if (!TryReceiveUdpFrame(out NetMQFrame? frame, out string? peerName))
+		    return;
 
                 // If filter is set, check that beacon matches it
                 var isValid = frame.MessageSize >= m_filter?.MessageSize && Compare(frame, m_filter, m_filter.MessageSize);
@@ -205,6 +224,10 @@ namespace NetMQ
 
             private void OnPipeReady(object sender, NetMQSocketEventArgs e)
             {
+                Assumes.NotNull(m_pipe);
+                Assumes.NotNull(m_pingTimer);
+                Assumes.NotNull(m_poller);
+
                 NetMQMessage message = m_pipe.ReceiveMultipartMessage();
 
                 string command = message.Pop().ConvertToString();
@@ -242,14 +265,14 @@ namespace NetMQ
 
             private void SendUdpFrame(NetMQFrame frame)
             {
+                Assumes.NotNull(m_udpSocket);
+
                 try
                 {
                     m_udpSocket.SendTo(frame.Buffer, 0, frame.MessageSize, SocketFlags.None, m_broadcastAddress);
                 }
-                catch (SocketException ex)
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressNotAvailable)
                 {
-                    if (ex.SocketErrorCode != SocketError.AddressNotAvailable) { throw; }
-
                     // Initiate Creation of new Udp here to solve issue related to 'sudden' network change.
                     // On windows (7 OR 10) incorrect/previous ip address might still exist instead of new Ip
                     // due to network change which causes crash (if no try/catch and keep trying to send to incorrect/not available address.
@@ -257,15 +280,28 @@ namespace NetMQ
                 }
             }
 
-            private NetMQFrame ReceiveUdpFrame(out string peerName)
+            private bool TryReceiveUdpFrame([NotNullWhen(returnValue: true)] out NetMQFrame? frame, [NotNullWhen(returnValue: true)] out string? peerName)
             {
+                Assumes.NotNull(m_udpSocket);
+
                 var buffer = new byte[UdpFrameMax];
                 EndPoint peer = new IPEndPoint(IPAddress.Any, 0);
 
-                var bytesRead = m_udpSocket.ReceiveFrom(buffer, ref peer);
-                peerName = peer.ToString();
+                int bytesRead = 0;
+                try
+                {
+                    bytesRead = m_udpSocket.ReceiveFrom(buffer, ref peer);
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.MessageSize)
+                {
+                    frame = default;
+                    peerName = null;
+                    return false;
+                }
 
-                return new NetMQFrame(buffer, bytesRead);
+                peerName = peer.ToString();
+                frame = new NetMQFrame(buffer, bytesRead);
+                return true;
             }
         }
 
@@ -275,8 +311,8 @@ namespace NetMQ
 
         private readonly EventDelegator<NetMQBeaconEventArgs> m_receiveEvent;
 
-        [CanBeNull] private string m_boundTo;
-        [CanBeNull] private string m_hostName;
+        private string? m_boundTo;
+        private string? m_hostName;
         private int m_isDisposed;
 
         /// <summary>
@@ -286,7 +322,7 @@ namespace NetMQ
         {
             m_actor = NetMQActor.Create(new Shim());
 
-            void OnReceive(object sender, NetMQActorEventArgs e) => m_receiveEvent.Fire(this, new NetMQBeaconEventArgs(this));
+            void OnReceive(object sender, NetMQActorEventArgs e) => m_receiveEvent!.Fire(this, new NetMQBeaconEventArgs(this));
 
             m_receiveEvent = new EventDelegator<NetMQBeaconEventArgs>(
                 () => m_actor.ReceiveReady += OnReceive,
@@ -306,8 +342,7 @@ namespace NetMQ
         ///     <item>an error occurred during reverse DNS lookup.</item>
         /// </list>
         /// </remarks>
-        [CanBeNull]
-        public string HostName
+        public string? HostName
         {
             get
             {
@@ -341,7 +376,7 @@ namespace NetMQ
         /// <summary>
         /// Get the IP address this beacon is bound to.
         /// </summary>
-        public string BoundTo => m_boundTo;
+        public string? BoundTo => m_boundTo;
 
         /// <summary>
         /// Get the socket of the contained actor.
@@ -373,7 +408,7 @@ namespace NetMQ
         /// <remarks>Blocks until the bind operation completes.</remarks>
         /// <param name="port">The UDP port to bind to.</param>
         /// <param name="interfaceName">IP address of the interface to bind to. Pass empty string (the default value) to use the default interface.</param>
-        public void Configure(int port, [NotNull] string interfaceName = "")
+        public void Configure(int port, string interfaceName = "")
         {
             var message = new NetMQMessage();
             message.Append(ConfigureCommand);
@@ -392,7 +427,7 @@ namespace NetMQ
         /// <param name="transmit">Beacon to transmit.</param>
         /// <param name="interval">Interval to transmit beacon</param>
         /// <param name="encoding">Encoding for <paramref name="transmit"/>. Defaults to <see cref="Encoding.UTF8"/>.</param>
-        public void Publish([NotNull] string transmit, TimeSpan interval, Encoding encoding = null)
+        public void Publish(string transmit, TimeSpan interval, Encoding? encoding = null)
         {
             Publish((encoding ?? Encoding.UTF8).GetBytes(transmit), interval);
         }
@@ -402,7 +437,7 @@ namespace NetMQ
         /// </summary>
         /// <param name="transmit">Beacon to transmit</param>
         /// <param name="interval">Interval to transmit beacon</param>
-        public void Publish([NotNull] byte[] transmit, TimeSpan interval)
+        public void Publish(byte[] transmit, TimeSpan interval)
         {
             var message = new NetMQMessage();
             message.Append(PublishCommand);
@@ -417,7 +452,7 @@ namespace NetMQ
         /// </summary>
         /// <param name="transmit">Beacon to transmit</param>
         /// <param name="encoding">Encoding for <paramref name="transmit"/>. Defaults to <see cref="Encoding.UTF8"/>.</param>
-        public void Publish([NotNull] string transmit, Encoding encoding = null)
+        public void Publish(string transmit, Encoding? encoding = null)
         {
             Publish(transmit, TimeSpan.FromSeconds(1), encoding);
         }
@@ -426,7 +461,7 @@ namespace NetMQ
         /// Publish beacon immediately and continue to publish every second
         /// </summary>
         /// <param name="transmit">Beacon to transmit</param>
-        public void Publish([NotNull] byte[] transmit)
+        public void Publish(byte[] transmit)
         {
             Publish(transmit, TimeSpan.FromSeconds(1));
         }
@@ -447,7 +482,7 @@ namespace NetMQ
         /// Any previous subscription is replaced by this one.
         /// </remarks>
         /// <param name="filter">Beacon will be filtered by this</param>
-        public void Subscribe([NotNull] string filter)
+        public void Subscribe(string filter)
         {
             m_actor.SendMoreFrame(SubscribeCommand).SendFrame(filter);
         }
@@ -479,7 +514,7 @@ namespace NetMQ
         /// <returns><c>true</c> if a beacon message was received, otherwise <c>false</c>.</returns>
         public bool TryReceive(TimeSpan timeout, out BeaconMessage message)
         {
-            if (!m_actor.TryReceiveFrameString(timeout, out string peerName))
+            if (!m_actor.TryReceiveFrameString(timeout, out string? peerName))
             {
                 message = default(BeaconMessage);
                 return false;
