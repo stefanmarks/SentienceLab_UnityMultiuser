@@ -15,13 +15,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [1.0] - 2021-12-12
 
-### Added
-
 ### Changed
 
 - Separated from SentienceLab framework v1.5.2
 
-### Removed
 
 
 <!---
