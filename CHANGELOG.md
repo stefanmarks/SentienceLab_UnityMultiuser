@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 
-## [1.-] - 2021-12-12
+## [1.1] - 2023-01-12
+
+### Changed
+
+- Updated to NetMQ v4 and added NaCl library
+
+
+## [1.0] - 2021-12-12
 
 ### Added
 
@@ -16,3 +23,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Removed
 
+
+<!---
+## [1.x] - 20xx-xx-xx
+
+### Added
+
+### Changed
+
+### Removed
+--->
