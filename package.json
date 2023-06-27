@@ -8,8 +8,13 @@
     "multiuser",
     "network"
   ],
+  "author": {
+    "name": "SentienceLab",
+    "email": "stefan.marks.ac@gmail.com",
+    "url": "http://stefanmarks.info"
+  },
   "dependencies": {
-    "nz.ac.aut.sentiencelab": "1.6.0"
+    "nz.ac.aut.sentiencelab": "1.7.0"
   },
   "type": "library"
 }
