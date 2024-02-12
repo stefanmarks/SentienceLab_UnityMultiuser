@@ -86,7 +86,7 @@ namespace SentienceLab.MajorDomo
 			{
 				if (ms_instance == null)
 				{
-					ms_instance = FindObjectOfType<MajorDomoManager>();
+					ms_instance = FindAnyObjectByType<MajorDomoManager>();
 				}
 				return ms_instance;
 			}
