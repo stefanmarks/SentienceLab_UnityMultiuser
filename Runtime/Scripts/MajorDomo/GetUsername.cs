@@ -4,7 +4,6 @@
 // (C) Westfälische Hochschule, Gelsenkirchen, Germany
 #endregion Copyright Information
 
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -16,6 +15,8 @@ namespace SentienceLab.MajorDomo
 	/// </summary>
 	/// 
 	[RequireComponent(typeof(Text))]
+	[AddComponentMenu("SentienceLab/MajorDomo/Get Username")]
+
 	public class GetUsername : MonoBehaviour
 	{
 		[Tooltip("SynchronisedGameObject to register with (Leave empty to use first SynchronisedGameObject in this or its parent nodes)")]
