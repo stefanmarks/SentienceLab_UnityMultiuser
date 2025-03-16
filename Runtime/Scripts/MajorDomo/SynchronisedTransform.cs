@@ -310,7 +310,7 @@ namespace SentienceLab.MajorDomo
 				}
 				if (DoTransVel())
 				{
-					if ((m_rigidbody != null) && !m_rigidbody.IsSleeping() && m_rigidbody.velocity.sqrMagnitude > 0)
+					if ((m_rigidbody != null) && !m_rigidbody.IsSleeping() && m_rigidbody.linearVelocity.sqrMagnitude > 0)
 					{
 						m_modified = true;
 					}
@@ -373,7 +373,7 @@ namespace SentienceLab.MajorDomo
 					{
 						if (!m_rigidbody.IsSleeping())
 						{
-							vel = GetRefVec(m_rigidbody.velocity);
+							vel = GetRefVec(m_rigidbody.linearVelocity);
 						}
 					}
 					else if (deltaT > 0)
